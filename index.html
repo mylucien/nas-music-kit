@@ -1,0 +1,300 @@
+<!doctype html>
+{# Jinja2 模板：vip_mode 由 Flask 路由注入 #}
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <title>NAS 音乐助手</title>
+    <meta name="description" content="搜索高质量音乐，一键下载入库 NAS">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#1a1d24">
+    <link rel="apple-touch-icon" href="/static/icon.png">
+    <link rel="icon" type="image/png" href="/static/icon.png">
+
+    <link rel="stylesheet" href="/static/css/player.css">
+    <link rel="stylesheet" href="/static/css/small.css">
+    <link rel="stylesheet" href="/static/css/jquery.mCustomScrollbar.min.css">
+    <link rel="stylesheet" href="/static/plugins/layer/skin/default/layer.css">
+
+    <style>
+        /* ── 搜索弹窗补丁 ── */
+        .quality-group {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .quality-group select {
+            border: 1px solid rgba(150,150,150,.4);
+            color: #333;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .quality-label { white-space: nowrap; }
+
+        /* ── 列表菜单：下载/Alist 图标 ── */
+        .icon-download,
+        .icon-alist {
+            background-position: center;
+            background-repeat: no-repeat;
+            background-size: 20px 20px;
+        }
+        .icon-download {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c8d0d8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/%3E%3Cpolyline points='7 10 12 15 17 10'/%3E%3Cline x1='12' y1='15' x2='12' y2='3'/%3E%3C/svg%3E");
+        }
+        .icon-alist {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c8d0d8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='16 16 12 12 8 16'/%3E%3Cline x1='12' y1='12' x2='12' y2='21'/%3E%3Cpath d='M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3'/%3E%3C/svg%3E");
+        }
+
+        /* ── Header 右侧图标按钮 ── */
+        .header-btns {
+            position: absolute;
+            right: 18px;
+            top: 18px;
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+        .header-icon-btn {
+            cursor: pointer;
+            color: #829194;
+            line-height: 1;
+            transition: color .2s;
+            background: none;
+            border: none;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            text-decoration: none;
+        }
+        .header-icon-btn:hover { color: #fff; }
+        .header-icon-btn svg {
+            width: 20px; height: 20px;
+            stroke: currentColor; fill: none;
+            stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+        }
+
+        /* ── Alist Modal ── */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,.75);
+            backdrop-filter: blur(6px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .25s ease;
+        }
+        .modal-overlay.show { opacity: 1; pointer-events: auto; }
+        .modal-card {
+            background: #1a1d24;
+            border: 1px solid rgba(255,255,255,.1);
+            border-radius: 16px;
+            padding: 28px 28px 24px;
+            width: 360px;
+            max-width: 92vw;
+            transform: scale(.95);
+            transition: transform .25s cubic-bezier(.175,.885,.32,1.275);
+            box-shadow: 0 12px 40px rgba(0,0,0,.5);
+            color: #e0e0e0;
+        }
+        .modal-overlay.show .modal-card { transform: scale(1); }
+        .modal-card h3 { margin: 0 0 18px; font-size: 1rem; font-weight: 600; color: #fff; }
+        .modal-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+        .modal-field label { font-size: .78rem; color: #999; }
+        .modal-input {
+            background: #252830;
+            border: 1px solid rgba(150,150,150,.3);
+            border-radius: 7px;
+            color: #e0e0e0;
+            padding: 9px 12px;
+            font-size: .88rem;
+            width: 100%;
+            box-sizing: border-box;
+            outline: none;
+            transition: border-color .2s;
+        }
+        .modal-input:focus { border-color: #6c5ce7; }
+        #alist-test-msg { font-size: .78rem; min-height: 16px; margin-bottom: 8px; }
+        .modal-actions { display: flex; gap: 10px; margin-top: 4px; }
+        .modal-btn {
+            flex: 1; padding: 10px; border-radius: 8px;
+            border: 1px solid rgba(150,150,150,.3);
+            background: #252830; color: #e0e0e0;
+            font-size: .88rem; cursor: pointer; transition: opacity .2s;
+        }
+        .modal-btn:hover { opacity: .8; }
+        .modal-btn-primary {
+            background: #6c5ce7; border-color: #6c5ce7;
+            color: #fff; font-weight: 600;
+        }
+
+        /* ── Toast ── */
+        #toast {
+            position: fixed;
+            bottom: 28px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(26,29,36,.92);
+            backdrop-filter: blur(8px);
+            color: #fff;
+            padding: 12px 22px;
+            border-radius: 10px;
+            box-shadow: 0 6px 24px rgba(0,0,0,.5);
+            z-index: 9999;
+            font-size: .88rem;
+            font-weight: 500;
+            max-width: 85vw;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,.1);
+            transition: opacity .3s, transform .3s;
+        }
+        #toast.hidden  { opacity: 0; transform: translateX(-50%) translateY(12px); pointer-events: none; }
+        #toast.show    { opacity: 1; transform: translateX(-50%) translateY(0); }
+        #toast.success { border-left: 4px solid #00b894; }
+        #toast.error   { border-left: 4px solid #d63031; }
+
+        /* ── 修正 MK 播放器按钮图片路径 ── */
+        .btn-prev, .btn-play, .btn-next, .btn-order, .btn-quiet {
+            background-image: url('/static/images/player.png') !important;
+        }
+    </style>
+</head>
+
+<body>
+
+<div id="blur-img"></div>
+
+<!-- ── Header ── -->
+<div class="header">
+    <div class="logo" title="NAS 音乐助手">♫ NAS 音乐助手</div>
+    <div class="header-btns">
+        <a href="https://github.com/juneix/nas-music-kit" target="_blank"
+           class="header-icon-btn" title="GitHub">
+            <svg viewBox="0 0 24 24" stroke-width="1.8">
+                <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>
+            </svg>
+        </a>
+        <button id="alist-icon" class="header-icon-btn"
+                title="Alist 设置" onclick="toggleAlistModal(true)">
+            <svg viewBox="0 0 24 24">
+                <polyline points="16 16 12 12 8 16"/>
+                <line x1="12" y1="12" x2="12" y2="21"/>
+                <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+            </svg>
+        </button>
+    </div>
+</div>
+
+<!-- ── 中部主体 ── -->
+<div class="center">
+    <div class="container">
+        <div class="btn-bar">
+            <div class="btn-box" id="btn-area">
+                <span class="btn" data-action="player"  hidden>播放器</span>
+                <span class="btn" data-action="playing" title="正在播放列表">正在播放</span>
+                <span class="btn" data-action="sheet"   title="播放列表">播放列表</span>
+                <span class="btn" data-action="search"  title="搜索音乐">歌曲搜索</span>
+            </div>
+        </div>
+
+        <div class="data-area">
+            <div id="sheet" class="data-box" hidden></div>
+            <div id="main-list" class="music-list data-box"></div>
+        </div>
+
+        <div class="player" id="player">
+            <div class="cover">
+                <img src="/static/images/player_cover.png" class="music-cover" id="music-cover">
+            </div>
+            <div class="lyric">
+                <ul id="lyric"></ul>
+            </div>
+            <div id="music-info" title="点击查看歌曲信息"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ── 底部播放控制栏 ── -->
+<div class="footer">
+    <div class="container">
+        <div class="con-btn">
+            <a href="javascript:;" class="player-btn btn-prev"  title="上一首"></a>
+            <a href="javascript:;" class="player-btn btn-play"  title="暂停/继续"></a>
+            <a href="javascript:;" class="player-btn btn-next"  title="下一首"></a>
+            <a href="javascript:;" class="player-btn btn-order" title="循环控制"></a>
+        </div>
+        <div class="vol">
+            <div class="quiet">
+                <a href="javascript:;" class="player-btn btn-quiet" title="静音"></a>
+            </div>
+            <div class="volume">
+                <div class="volume-box">
+                    <div id="volume-progress" class="mkpgb-area"></div>
+                </div>
+            </div>
+        </div>
+        <div class="progress">
+            <div class="progress-box">
+                <div id="music-progress" class="mkpgb-area"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Alist Modal ── -->
+<div id="alist-modal" class="modal-overlay" onclick="toggleAlistModal(false)">
+    <div class="modal-card" onclick="event.stopPropagation()">
+        <h3>☁️ Alist 离线下载设置</h3>
+        <div class="modal-field">
+            <label>Alist 地址</label>
+            <input id="alist-url" type="text" placeholder="http://192.168.1.1:5244" class="modal-input">
+        </div>
+        <div class="modal-field">
+            <label>Token</label>
+            <input id="alist-token" type="password" placeholder="alist-xxxxxxxxxxxx" class="modal-input">
+        </div>
+        <div class="modal-field">
+            <label>保存路径</label>
+            <input id="alist-path" type="text" placeholder="/music" class="modal-input">
+        </div>
+        <div id="alist-test-msg"></div>
+        <div class="modal-actions">
+            <button class="modal-btn" onclick="testAlist()">测试连接</button>
+            <button class="modal-btn modal-btn-primary" onclick="saveAlist()">保存</button>
+        </div>
+    </div>
+</div>
+
+<div id="toast" class="hidden"></div>
+
+<!-- ── Jinja2 变量注入 ── -->
+<script>var IS_VIP = {{ 'true' if vip_mode else 'false' }};</script>
+
+<!-- ── JS（顺序不可变）── -->
+<script src="/static/js/jquery.min.js"></script>
+<script src="/static/plugins/layer/layer.js"></script>
+<script src="/static/js/ajax.js"></script>
+<script src="/static/js/lyric.js"></script>
+<script src="/static/js/musicList.js"></script>
+<script src="/static/js/player.js"></script>
+<script src="/static/js/functions.js"></script>
+<script src="/static/js/jquery.mCustomScrollbar.concat.min.js"></script>
+<script src="/static/js/background-blur.min.js"></script>
+
+<script>
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(function(){});
+    }
+</script>
+</body>
+</html>
